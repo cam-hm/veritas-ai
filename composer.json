@@ -10,9 +10,10 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
-        "camh/laravel-ollama": "@dev",
+        "camh/laravel-ollama": "^1.0",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
+        "pgvector/pgvector": "^0.2.2",
         "spatie/pdf-to-text": "^1.54"
     },
     "require-dev": {
