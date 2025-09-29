@@ -4,32 +4,50 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use App\Models\DocumentChunk;
+use App\Models\Document;
 use Camh\Ollama\Facades\Ollama;
 use Pgvector\Laravel\Distance;
 use Illuminate\Contracts\Console\Isolatable;
 
 class VeritasAsk extends Command implements Isolatable
 {
-    protected $signature = 'veritas:ask {question}';
+    // 1. Update the signature to accept an optional document ID
+    protected $signature = 'veritas:ask {question} {--doc=}';
     protected $description = 'Ask a question based on the embedded documents.';
 
     public function handle(): int
     {
-        // Increase memory limit for this command to handle large contexts
         ini_set('memory_limit', '512M');
-
         $question = $this->argument('question');
+        $documentId = $this->option('doc');
 
-        $this->info("Finding relevant documents for your question...");
+        if ($documentId) {
+            $document = Document::find($documentId);
+            if (!$document) {
+                $this->error("No document found with ID: {$documentId}");
+                return self::FAILURE;
+            }
+            $this->info("Asking a question about document: '{$document->name}'...");
+        } else {
+            $this->info("Asking a question across all documents...");
+        }
 
         $questionEmbedding = Ollama::embed($question);
 
-        $relevantChunks = DocumentChunk::query()
+        // 2. Build the query
+        $query = DocumentChunk::query();
+
+        // 3. If a document ID is provided, add a 'where' clause to filter the search
+        if ($documentId) {
+            $query->where('document_id', $documentId);
+        }
+
+        $relevantChunks = $query
             ->nearestNeighbors('embedding', $questionEmbedding, Distance::Cosine)
             ->get();
 
         if ($relevantChunks->isEmpty()) {
-            $this->warn("I couldn't find any relevant information in the documents to answer your question.");
+            $this->warn("I couldn't find any relevant information to answer your question.");
             return self::SUCCESS;
         }
 
@@ -48,11 +66,9 @@ class VeritasAsk extends Command implements Isolatable
             {$question}
         ";
 
-        // ** THE FIX IS HERE **
-        // We are now using the simple, non-streaming 'generate' method.
         $this->line("\nAnswer:");
         $response = Ollama::generate($prompt);
-        $this->line($response); // Print the entire response at once
+        $this->line($response);
 
         return self::SUCCESS;
     }
