@@ -11,7 +11,6 @@ use Illuminate\Contracts\Console\Isolatable;
 
 class VeritasAsk extends Command implements Isolatable
 {
-    // 1. Update the signature to accept an optional document ID
     protected $signature = 'veritas:ask {question} {--doc=}';
     protected $description = 'Ask a question based on the embedded documents.';
 
@@ -34,16 +33,15 @@ class VeritasAsk extends Command implements Isolatable
 
         $questionEmbedding = Ollama::embed($question);
 
-        // 2. Build the query
         $query = DocumentChunk::query();
 
-        // 3. If a document ID is provided, add a 'where' clause to filter the search
         if ($documentId) {
             $query->where('document_id', $documentId);
         }
 
         $relevantChunks = $query
             ->nearestNeighbors('embedding', $questionEmbedding, Distance::Cosine)
+//            ->take(3)
             ->get();
 
         if ($relevantChunks->isEmpty()) {
@@ -66,9 +64,16 @@ class VeritasAsk extends Command implements Isolatable
             {$question}
         ";
 
+        // ** REVERT TO STREAMING HERE **
         $this->line("\nAnswer:");
-        $response = Ollama::generate($prompt);
-        $this->line($response);
+        Ollama::stream($prompt, function ($chunk) {
+            $data = json_decode($chunk, true);
+            // Use output->write() for continuous streaming without newlines
+            $this->output->write($data['response'] ?? '');
+        });
+
+        // Add a final newline for clean formatting
+        $this->output->newLine();
 
         return self::SUCCESS;
     }
