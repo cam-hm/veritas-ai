@@ -24,8 +24,8 @@
 
     <div class="p-4 border-t">
         <form @submit.prevent="ask" class="flex items-center gap-4">
-            <x-text-input x-model="question" class="flex-1" placeholder="Ask a question..." autocomplete="off" />
-            <x-primary-button type="submit">
+            <x-text-input x-model="question" x-bind:disabled="isStreaming" class="flex-1" placeholder="Ask a question..." autocomplete="off" />
+            <x-primary-button type="submit" x-bind:disabled="isStreaming">
                 <span x-show="!isStreaming">{{ __('Ask') }}</span>
                 <span x-show="isStreaming">Thinking...</span>
             </x-primary-button>
@@ -33,84 +33,78 @@
     </div>
 
     <style>
-      .typing-indicator::after {
-        content: '▌';
-        animation: blink 1s step-start infinite;
-      }
+      .typing-indicator::after { content: '▌'; animation: blink 1s step-start infinite; }
       @keyframes blink { 50% { opacity: 0; } }
     </style>
 </div>
 
 <script>
-function chatBoxComponent(initialMessages, documentId, streamUrl, csrfToken) {
+  function chatBoxComponent(initialMessages, documentId, streamUrl, csrfToken) {
     return {
-        messages: initialMessages,
-        question: '',
-        isStreaming: false,
-        ask() {
-            if (this.question.trim() === '' || this.isStreaming) return;
+      messages: initialMessages,
+      question: '',
+      isStreaming: false,
+      ask() {
+        if (this.question.trim() === '' || this.isStreaming) return;
 
-            this.isStreaming = true;
-            this.messages.push({ role: 'user', content: this.question });
-            this.messages.push({ role: 'assistant', content: '' });
+        this.isStreaming = true;
+        this.messages.push({ role: 'user', content: this.question });
+        this.messages.push({ role: 'assistant', content: '' });
 
-            // Use fetch and ReadableStream for POST streaming
-            fetch(streamUrl, {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': csrfToken,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    document_id: documentId,
-                    messages: this.messages,
-                }),
-            }).then(response => {
-                const reader = response.body.getReader();
-                let decoder = new TextDecoder();
-                let buffer = '';
-                const processChunk = ({ done, value }) => {
-                    if (done) {
-                        this.isStreaming = false;
-                        return;
-                    }
-                    buffer += decoder.decode(value, { stream: true });
-                    let lines = buffer.split('\n\n');
-                    buffer = lines.pop(); // Save incomplete chunk
-                    for (let line of lines) {
-                        if (line.startsWith('data: ')) {
-                            let chunk = line.slice(6);
-                            try {
-                                // If backend sends JSON, parse it
-                                let data = JSON.parse(chunk);
-                                if (data.error) {
-                                    this.messages[this.messages.length - 1].content = `Error: ${data.error}`;
-                                    this.isStreaming = false;
-                                    return;
-                                }
-                                if (data.message && data.message.content) {
-                                    this.messages[this.messages.length - 1].content += data.message.content;
-                                }
-                                if (data.done) {
-                                    this.isStreaming = false;
-                                    return;
-                                }
-                            } catch {
-                                // Otherwise, treat as plain text chunk
-                                this.messages[this.messages.length - 1].content += chunk;
-                            }
-                        }
-                    }
-                    return reader.read().then(processChunk);
-                };
-                return reader.read().then(processChunk);
-            }).catch(() => {
-                this.messages[this.messages.length - 1].content = 'Sorry, a connection error occurred.';
-                this.isStreaming = false;
-            });
+        fetch(streamUrl, {
+          method: 'POST',
+          headers: {
+            'X-CSRF-TOKEN': csrfToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            document_id: documentId,
+            messages: this.messages,
+          }),
+        }).then(response => {
+          const reader = response.body.getReader();
+          let decoder = new TextDecoder();
+          let buffer = '';
+          const processChunk = ({ done, value }) => {
+            if (done) {
+              this.isStreaming = false;
+              return;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            let lines = buffer.split('\n\n');
+            buffer = lines.pop();
+            for (let line of lines) {
+              if (line.startsWith('data: ')) {
+                let chunk = line.slice(6);
+                try {
+                  let data = JSON.parse(chunk);
+                  if (data.error) {
+                    this.messages[this.messages.length - 1].content = `Error: ${data.error}`;
+                    this.isStreaming = false;
+                    return;
+                  }
+                  if (data.message && data.message.content) {
+                    this.messages[this.messages.length - 1].content += data.message.content;
+                  }
+                  if (data.done) {
+                    this.isStreaming = false;
+                    return;
+                  }
+                } catch {
+                  // Fallback for non-json chunks
+                }
+              }
+            }
+            return reader.read().then(processChunk);
+          };
+          return reader.read().then(processChunk);
+        }).catch(() => {
+          this.messages[this.messages.length - 1].content = 'Sorry, a connection error occurred.';
+          this.isStreaming = false;
+        });
 
-            this.question = '';
-        }
+        this.question = '';
+      }
     }
-}
+  }
 </script>

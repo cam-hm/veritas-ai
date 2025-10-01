@@ -40,14 +40,6 @@ class StreamController extends Controller
                     echo "data: " . $chunk . "\n\n";
                     if (ob_get_level() > 0) ob_flush();
                     flush();
-
-                    // Send keep-alive comment every 10 seconds
-                    if (time() - $lastKeepAlive > 10) {
-                        echo ": keep-alive\n\n";
-                        if (ob_get_level() > 0) ob_flush();
-                        flush();
-                        $lastKeepAlive = time();
-                    }
                 }
             } catch (Exception $e) {
                 $errorData = json_encode(['error' => $e->getMessage()]);
@@ -59,6 +51,7 @@ class StreamController extends Controller
             'Content-Type' => 'text/event-stream',
             'X-Accel-Buffering' => 'no',
             'Cache-Control' => 'no-cache',
+            'Connection' => 'keep-alive',
         ]);
     }
 }
