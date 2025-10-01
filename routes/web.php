@@ -1,8 +1,8 @@
 <?php
 
+use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DocumentController;
 use Illuminate\Support\Facades\Route;
-use Livewire\Volt\Volt;
 
 Route::view('/', 'welcome');
 
@@ -14,6 +14,9 @@ Route::get('/documents', [DocumentController::class, 'index'])
     ->middleware(['auth', 'verified'])
     ->name('documents.index');
 
+Route::get('/chat/{document}', [ChatController::class, 'show'])
+    ->middleware(['auth', 'verified'])
+    ->name('chat.show');
 
 Route::view('profile', 'profile')
     ->middleware(['auth'])

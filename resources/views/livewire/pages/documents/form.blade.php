@@ -92,6 +92,9 @@
                         <span class="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-full">
                             Ready
                         </span>
+                        <a href="{{ route('chat.show', $document) }}" wire:navigate>
+                            <x-primary-button>{{ __('Chat') }}</x-primary-button>
+                        </a>
                         <x-danger-button wire:click="delete({{ $document->id }})">
                             {{ __('Delete') }}
                         </x-danger-button>
