@@ -9,78 +9,71 @@ class RecursiveChunkingService
      *
      * @param string $text The text to split.
      * @param int $chunkSize The target size of each chunk in characters.
-     * @return array An array of text chunks.
+     * @return array An array of structured chunks, each with 'content' and 'metadata'.
      */
-    public function chunk(string $text, int $chunkSize = 1000): array
+    public function chunk(string $text, int $chunkSize = 1500): array
     {
-        // 1. Basic text cleanup
         $text = trim($text);
 
-        // If the text is already small enough, return it as a single chunk
         if (mb_strlen($text) <= $chunkSize) {
-            return [$text];
+            return [$this->createChunk($text)];
         }
 
-        // 2. Start by splitting into paragraphs
-        $paragraphs = explode("\n\n", $text);
+        // Define splitters from largest to smallest semantic unit
+        $splitters = ["\n\n", "\n", ". ", " "];
+
+        foreach ($splitters as $splitter) {
+            $parts = explode($splitter, $text);
+            if (count($parts) > 1) {
+                // If splitting works, recursively process the parts
+                return $this->recursivelyProcessParts($parts, $splitter, $chunkSize);
+            }
+        }
+
+        // If no splitters work, just split by character length as a last resort
+        return str_split($text, $chunkSize);
+    }
+
+    private function recursivelyProcessParts(array $parts, string $separator, int $chunkSize): array
+    {
         $chunks = [];
         $currentChunk = '';
 
-        // 3. Group paragraphs into chunks of the desired size
-        foreach ($paragraphs as $paragraph) {
-            $paragraph = trim($paragraph);
-            if (empty($paragraph)) continue;
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if (empty($part)) continue;
 
-            // If a single paragraph is too large, recursively split it by sentences
-            if (mb_strlen($paragraph) > $chunkSize) {
-                $chunks = array_merge($chunks, $this->splitBySentence($paragraph, $chunkSize));
+            // If a single part is still too large, recursively chunk it further
+            if (mb_strlen($part) > $chunkSize) {
+                $chunks = array_merge($chunks, $this->chunk($part, $chunkSize));
                 continue;
             }
 
-            // If adding the next paragraph makes the current chunk too big,
-            // save the current chunk and start a new one.
-            if (mb_strlen($currentChunk) + mb_strlen($paragraph) > $chunkSize) {
+            if (mb_strlen($currentChunk) + mb_strlen($separator . $part) > $chunkSize) {
                 if (!empty($currentChunk)) {
-                    $chunks[] = $currentChunk;
+                    $chunks[] = $this->createChunk($currentChunk);
                 }
-                $currentChunk = $paragraph;
+                $currentChunk = $part;
             } else {
-                $currentChunk .= "\n\n" . $paragraph;
+                $currentChunk .= (empty($currentChunk) ? '' : $separator) . $part;
             }
         }
 
-        // Add the final remaining chunk
         if (!empty($currentChunk)) {
-            $chunks[] = $currentChunk;
+            $chunks[] = $this->createChunk($currentChunk);
         }
 
         return $chunks;
     }
 
-    /**
-     * A helper function to split a text by sentences if a paragraph is too long.
-     */
-    private function splitBySentence(string $text, int $chunkSize): array
+    private function createChunk(string $content): array
     {
-        $sentences = preg_split('/(?<=[.?!])\s+/', $text, -1, PREG_SPLIT_NO_EMPTY);
-        $chunks = [];
-        $currentChunk = '';
-
-        foreach ($sentences as $sentence) {
-            if (mb_strlen($currentChunk) + mb_strlen($sentence) > $chunkSize) {
-                if (!empty($currentChunk)) {
-                    $chunks[] = trim($currentChunk);
-                }
-                $currentChunk = $sentence;
-            } else {
-                $currentChunk .= ' ' . $sentence;
-            }
-        }
-
-        if (!empty($currentChunk)) {
-            $chunks[] = trim($currentChunk);
-        }
-
-        return $chunks;
+        return [
+            'content' => $content,
+            // We can add more metadata here in the future
+            'metadata' => [
+                'length' => mb_strlen($content),
+            ],
+        ];
     }
 }

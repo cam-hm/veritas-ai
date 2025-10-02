@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Services\RecursiveChunkingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -21,7 +22,7 @@ class ProcessDocument implements ShouldQueue
     {
     }
 
-    public function handle(TextExtractionService $extractor, SentenceChunkingService $chunker): void
+    public function handle(TextExtractionService $extractor, RecursiveChunkingService $chunker): void
     {
         try {
             // Get the absolute path using the Storage facade.
@@ -32,7 +33,10 @@ class ProcessDocument implements ShouldQueue
 
             $chunks = $chunker->chunk($text);
 
-            foreach ($chunks as $chunkContent) {
+            foreach ($chunks as $chunk) {
+                // The chunk is now an array, so we access the 'content' key
+                $chunkContent = $chunk['content'];
+
                 $trimmedChunk = trim($chunkContent);
                 if (empty($trimmedChunk) || strlen($trimmedChunk) < 5) {
                     continue;
@@ -43,6 +47,7 @@ class ProcessDocument implements ShouldQueue
                 $this->document->chunks()->create([
                     'content' => $trimmedChunk,
                     'embedding' => $embedding,
+                    // We will add a 'metadata' column to the database later
                 ]);
             }
         } catch (\Exception $e) {
