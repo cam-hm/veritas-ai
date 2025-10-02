@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use App\Models\Document;
 use App\Services\TextExtractionService;
-use App\Services\TextChunkingService;
+use App\Services\SentenceChunkingService;
 use Camh\Ollama\Facades\Ollama;
 
 class VeritasProcessDocument extends Command
@@ -13,7 +13,7 @@ class VeritasProcessDocument extends Command
     protected $signature = 'veritas:process {documentId}';
     protected $description = 'Extract, chunk, and embed a document.';
 
-    public function handle(TextExtractionService $extractor, TextChunkingService $chunker): int
+    public function handle(TextExtractionService $extractor, SentenceChunkingService $chunker): int
     {
         $documentId = $this->argument('documentId');
         $document = Document::find($documentId);

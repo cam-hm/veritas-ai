@@ -19,4 +19,12 @@ class Document extends Model
     {
         return $this->hasMany(DocumentChunk::class);
     }
+
+    /**
+     * Get the chat messages for the document.
+     */
+    public function chatMessages(): HasMany
+    {
+        return $this->hasMany(ChatMessage::class);
+    }
 }

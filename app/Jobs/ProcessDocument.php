@@ -9,7 +9,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use App\Models\Document;
 use App\Services\TextExtractionService;
-use App\Services\TextChunkingService;
+use App\Services\SentenceChunkingService;
 use Camh\Ollama\Facades\Ollama;
 use Illuminate\Support\Facades\Storage; // 1. Import the Storage facade
 
@@ -21,7 +21,7 @@ class ProcessDocument implements ShouldQueue
     {
     }
 
-    public function handle(TextExtractionService $extractor, TextChunkingService $chunker): void
+    public function handle(TextExtractionService $extractor, SentenceChunkingService $chunker): void
     {
         try {
             // Get the absolute path using the Storage facade.

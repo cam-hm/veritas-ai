@@ -48,8 +48,14 @@
         if (this.question.trim() === '' || this.isStreaming) return;
 
         this.isStreaming = true;
-        this.messages.push({ role: 'user', content: this.question });
-        this.messages.push({ role: 'assistant', content: '' });
+        // Add user message to UI and DB
+        const userMessage = { role: 'user', content: this.question };
+        this.messages.push(userMessage);
+        this.saveMessageToDB(userMessage);
+
+        // Add assistant placeholder to UI only (do NOT save to DB yet)
+        const assistantMessage = { role: 'assistant', content: '' };
+        this.messages.push(assistantMessage);
 
         fetch(streamUrl, {
           method: 'POST',
@@ -68,6 +74,11 @@
           const processChunk = ({ done, value }) => {
             if (done) {
               this.isStreaming = false;
+              // Store assistant message only once after streaming is done
+              const assistantMsg = this.messages[this.messages.length - 1];
+              if (assistantMsg.role === 'assistant') {
+                this.saveMessageToDB(assistantMsg);
+              }
               return;
             }
             buffer += decoder.decode(value, { stream: true });
@@ -81,13 +92,20 @@
                   if (data.error) {
                     this.messages[this.messages.length - 1].content = `Error: ${data.error}`;
                     this.isStreaming = false;
+                    this.saveMessageToDB({ role: 'assistant', content: `Error: ${data.error}` });
                     return;
                   }
                   if (data.message && data.message.content) {
                     this.messages[this.messages.length - 1].content += data.message.content;
+                    // Do NOT save assistant chunk to DB here
                   }
                   if (data.done) {
                     this.isStreaming = false;
+                    // Store assistant message only once after streaming is done
+                    const assistantMsg = this.messages[this.messages.length - 1];
+                    if (assistantMsg.role === 'assistant') {
+                      this.saveMessageToDB(assistantMsg);
+                    }
                     return;
                   }
                 } catch {
@@ -101,9 +119,19 @@
         }).catch(() => {
           this.messages[this.messages.length - 1].content = 'Sorry, a connection error occurred.';
           this.isStreaming = false;
+          this.saveMessageToDB({ role: 'assistant', content: 'Sorry, a connection error occurred.' });
         });
 
         this.question = '';
+      },
+      saveMessageToDB(message) {
+        // Use $wire to call Livewire method (Alpine context)
+        if (this.$wire) {
+          this.$wire.saveMessage(message.content, message.role);
+          console.log('Called Livewire saveMessage:', message);
+        } else {
+          console.error('Livewire $wire not available in Alpine context');
+        }
       }
     }
   }
