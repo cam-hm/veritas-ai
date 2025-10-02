@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use App\Models\Document;
 use App\Models\DocumentChunk;
@@ -26,6 +27,8 @@ class StreamController extends Controller
                     ->where('document_id', $document->id)
                     ->nearestNeighbors('embedding', $questionEmbedding, Distance::Cosine, 3)
                     ->get();
+
+                Log::info('Relevant Chunks: ' . $relevantChunks->pluck('id')->implode(', '));
 
                 $context = $relevantChunks->pluck('content')->implode("\n\n---\n\n");
                 $systemPrompt = "Based *only* on the following context...\n\nContext:\n{$context}";
