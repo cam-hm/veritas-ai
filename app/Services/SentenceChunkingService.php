@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-class TextChunkingService
+class SentenceChunkingService
 {
     /**
      * Splits a text into semantic chunks based on paragraphs.
