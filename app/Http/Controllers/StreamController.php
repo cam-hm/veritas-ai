@@ -26,6 +26,7 @@ class StreamController extends Controller
                 $relevantChunks = DocumentChunk::query()
                     ->where('document_id', $document->id)
                     ->nearestNeighbors('embedding', $questionEmbedding, Distance::Cosine, 3)
+                    ->take(5)
                     ->get();
 
                 Log::info('Relevant Chunks: ' . $relevantChunks->pluck('id')->implode(', '));
