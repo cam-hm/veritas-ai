@@ -15,6 +15,10 @@ Route::get('/documents', [DocumentController::class, 'index'])
     ->middleware(['auth', 'verified'])
     ->name('documents.index');
 
+Route::get('/chat', [ChatController::class, 'general'])
+    ->middleware(['auth', 'verified'])
+    ->name('chat.general');
+
 Route::get('/chat/{document}', [ChatController::class, 'show'])
     ->middleware(['auth', 'verified'])
     ->name('chat.show');
