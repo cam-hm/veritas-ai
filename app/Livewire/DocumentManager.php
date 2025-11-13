@@ -8,6 +8,7 @@ use App\Models\Document;
 use App\Jobs\ProcessDocument;
 use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Auth;
 
 class DocumentManager extends Component
 {
@@ -28,14 +29,22 @@ class DocumentManager extends Component
     #[Computed]
     public function documents()
     {
-        return Document::latest()->get();
+        return Document::query()
+            ->where('user_id', Auth::id())
+            ->latest()
+            ->get();
     }
 
     public function save()
     {
         $this->validate([ 'file' => 'required|file|mimes:pdf,docx,txt,md|max:10240' ]);
         $path = $this->file->store('documents');
-        $document = Document::create([ 'name' => $this->file->getClientOriginalName(), 'path' => $path ]);
+        $document = Document::create([
+            'user_id' => Auth::id(),
+            'name' => $this->file->getClientOriginalName(),
+            'path' => $path,
+            'status' => 'queued',
+        ]);
         ProcessDocument::dispatch($document);
 
         $this->reset('file');
@@ -48,7 +57,7 @@ class DocumentManager extends Component
 
     public function delete($documentId)
     {
-        $document = Document::findOrFail($documentId);
+        $document = Document::where('user_id', Auth::id())->findOrFail($documentId);
         Storage::delete($document->path);
         $document->delete();
         session()->flash('status', 'Document deleted successfully.');

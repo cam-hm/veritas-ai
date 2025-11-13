@@ -10,6 +10,7 @@ use App\Models\DocumentChunk;
 use Camh\Ollama\Facades\Ollama;
 use Pgvector\Laravel\Distance;
 use Exception;
+use Illuminate\Support\Facades\Auth;
 
 class StreamController extends Controller
 {
@@ -27,6 +28,13 @@ class StreamController extends Controller
                 $query = DocumentChunk::query();
                 if ($document) {
                     $query->where('document_id', $document->id);
+                }
+                else {
+                    // Limit general chat retrieval to the current user's documents
+                    $userId = Auth::id();
+                    $query->whereHas('document', function ($q) use ($userId) {
+                        $q->where('user_id', $userId);
+                    });
                 }
 
                 $relevantChunks = $query
