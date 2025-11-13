@@ -1,0 +1,156 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: veritas-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PHP_IDE_CONFIG: serverName=veritas
+    volumes:
+      - .:/var/www/html:cached
+      - vendor:/var/www/html/vendor
+      - storage:/var/www/html/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - veritas
+
+  queue:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: veritas-queue
+    command: php artisan queue:work --tries=1 --backoff=3
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - .:/var/www/html:cached
+      - vendor:/var/www/html/vendor
+      - storage:/var/www/html/storage
+    depends_on:
+      app:
+        condition: service_started
+    profiles: ["workers"]
+    networks:
+      - veritas
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: veritas-scheduler
+    command: php artisan schedule:work
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - .:/var/www/html:cached
+      - vendor:/var/www/html/vendor
+      - storage:/var/www/html/storage
+    depends_on:
+      app:
+        condition: service_started
+    profiles: ["workers"]
+    networks:
+      - veritas
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: veritas-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html:cached
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - veritas
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: veritas-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: veritas
+      POSTGRES_USER: veritas
+      POSTGRES_PASSWORD: veritas
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - veritas
+
+  redis:
+    image: redis:7-alpine
+    container_name: veritas-redis
+    restart: unless-stopped
+    networks:
+      - veritas
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: veritas-mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+    networks:
+      - veritas
+
+  node:
+    image: node:20-alpine
+    container_name: veritas-node
+    working_dir: /var/www/html
+    command: sh -c "npm install && npm run dev -- --host"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_PORT: "5173"
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/var/www/html:cached
+    profiles: ["frontend"]
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - veritas
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: veritas-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    profiles: ["ai"]
+    networks:
+      - veritas
+
+networks:
+  veritas:
+    driver: bridge
+
+volumes:
+  pgdata:
+  vendor:
+  storage:
+  ollama:
+
