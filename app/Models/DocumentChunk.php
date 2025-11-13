@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Pgvector\Laravel\HasNeighbors;
 use Pgvector\Laravel\Vector; // Import the Vector class
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DocumentChunk extends Model
 {
@@ -20,4 +21,9 @@ class DocumentChunk extends Model
     protected $casts = [
         'embedding' => Vector::class,
     ];
+
+    public function document(): BelongsTo
+    {
+        return $this->belongsTo(Document::class);
+    }
 }

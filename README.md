@@ -59,3 +59,68 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+
+## VeritasAI Project Workflow
+
+This repository extends a standard Laravel app with RAG (Retrieval-Augmented Generation) features powered by pgvector and Ollama, plus a streaming chat UI. Below is a concise overview of the end-to-end workflow and how to run it locally.
+
+### High-level flow
+- Upload a document (PDF/DOCX/TXT/MD) via the Documents page (Livewire component: App\Livewire\DocumentManager).
+- A background job (App\Jobs\ProcessDocument) extracts text, chunks it, creates embeddings via Ollama, and stores chunks in Postgres with a pgvector column.
+- An IVFFlat index (database/migrations/2025_10_02_083142_add_ivfflat_index_to_document_chunks_table.php) accelerates nearest-neighbor search with cosine distance.
+- During chat, the StreamController embeds the latest user message, retrieves the most relevant chunks for the selected document, builds a context-constrained system prompt, and streams the model’s response via Server-Sent Events (SSE).
+
+### Key components
+- Upload & management: App\Livewire\DocumentManager
+  - Validates and stores the uploaded file under storage/app/documents.
+  - Creates an App\Models\Document entry and dispatches App\Jobs\ProcessDocument.
+- Background processing: App\Jobs\ProcessDocument
+  - Uses App\Services\TextExtractionService (to extract text),
+    App\Services\RecursiveChunkingService (to split into semantic chunks), and Camh\Ollama\Facades\Ollama (to embed text).
+  - Persists each chunk to document_chunks with both content and embedding.
+- Retrieval for chat: App\Http\Controllers\StreamController
+  - Embeds the latest user message.
+  - Performs nearestNeighbors on embedding with Pgvector\Laravel\Distance::Cosine, filtered to the current document.
+  - Streams the response via SSE to the browser.
+- Performance check: App\Console\Commands\TestVectorSearchSpeed
+  - Command: php artisan veritas:test-speed to benchmark nearest-neighbor queries.
+
+### Routes
+- GET /documents → Document list/upload (requires auth + verified)
+- GET /chat → General chat across all documents (requires auth + verified)
+- GET /chat/{document} → Chat UI for a specific document (requires auth + verified)
+- POST /chat/stream → SSE endpoint used by the chat UI (supports both general and document-specific chat; requires auth)
+
+### Prerequisites
+- PHP, Composer, Node.js (for front-end assets if you use them).
+- PostgreSQL with the pgvector extension installed and enabled for your database.
+- Ollama installed and running locally (https://ollama.com). Ensure the model(s) you plan to use are pulled.
+
+### Local setup
+1. Copy .env and configure database connection to a Postgres DB with pgvector enabled.
+2. Install dependencies:
+   - composer install
+   - npm install (optional if you will build front-end assets)
+3. Run migrations:
+   - php artisan migrate
+   - The migration at database/migrations/2025_10_02_083142_add_ivfflat_index_to_document_chunks_table.php creates the IVFFlat index used for fast cosine search.
+4. Start services:
+   - php artisan serve
+   - php artisan queue:work (required for background document processing)
+   - Ensure Ollama is running and accessible (default http://127.0.0.1:11434). Configure env vars if needed per the Ollama package.
+5. (Optional) Build assets:
+   - npm run dev
+
+### Typical usage
+- Register/login (routes use auth and, for some pages, the verified middleware).
+- Go to /documents, upload a file. You should see a flash message that processing has started.
+- The queue worker extracts text, chunks, and embeds content. Chunks are stored in document_chunks.
+- Navigate to /chat/{document} to ask questions. Responses stream from POST /chat/stream.
+
+### Troubleshooting tips
+- Vector index missing or slow search: ensure the pgvector extension is enabled and the IVFFlat index migration has run. Consider increasing lists or probe parameters if supported by your setup for recall/perf trade-offs.
+- No responses from chat: confirm Ollama is running and the model is available; check storage/logs/laravel.log for errors.
+- Background job not executing: make sure php artisan queue:work is running and your queue connection is configured (default: database/redis as per your .env).
+- File path issues on processing: ProcessDocument uses Storage::path($document->path). Ensure the file exists under storage/app/documents.
+

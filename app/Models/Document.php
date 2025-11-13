@@ -10,7 +10,7 @@ class Document extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'path'];
+    protected $fillable = ['name', 'path', 'user_id', 'status', 'processed_at', 'error_message', 'num_chunks', 'embedding_model'];
 
     /**
      * A document is composed of many text chunks.
@@ -26,5 +26,13 @@ class Document extends Model
     public function chatMessages(): HasMany
     {
         return $this->hasMany(ChatMessage::class);
+    }
+
+    /**
+     * Owner of the document.
+     */
+    public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 }

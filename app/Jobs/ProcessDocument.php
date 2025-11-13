@@ -13,6 +13,7 @@ use App\Services\TextExtractionService;
 use App\Services\SentenceChunkingService;
 use Camh\Ollama\Facades\Ollama;
 use Illuminate\Support\Facades\Storage; // 1. Import the Storage facade
+use Illuminate\Support\Facades\Log;
 
 class ProcessDocument implements ShouldQueue
 {
@@ -25,6 +26,9 @@ class ProcessDocument implements ShouldQueue
     public function handle(TextExtractionService $extractor, RecursiveChunkingService $chunker): void
     {
         try {
+            // Mark as processing
+            $this->document->update(['status' => 'processing', 'error_message' => null]);
+
             // Get the absolute path using the Storage facade.
             $absolutePath = Storage::path($this->document->path);
 
@@ -33,6 +37,7 @@ class ProcessDocument implements ShouldQueue
 
             $chunks = $chunker->chunk($text);
 
+            $count = 0;
             foreach ($chunks as $chunk) {
                 // The chunk is now an array, so we access the 'content' key
                 $chunkContent = $chunk['content'];
@@ -49,9 +54,29 @@ class ProcessDocument implements ShouldQueue
                     'embedding' => $embedding,
                     // We will add a 'metadata' column to the database later
                 ]);
+                $count++;
             }
+
+            $this->document->update([
+                'status' => 'processed',
+                'processed_at' => now(),
+                'num_chunks' => $count,
+            ]);
         } catch (\Exception $e) {
-            // ... (error handling)
+            // Update document to failed state and store error message
+            try {
+                $this->document->update([
+                    'status' => 'failed',
+                    'error_message' => $e->getMessage(),
+                ]);
+            } catch (\Throwable $t) {
+                // Best-effort logging if update fails
+                Log::error('Failed to update document status after exception', [
+                    'document_id' => $this->document->id,
+                    'exception' => $e->getMessage(),
+                    'update_error' => $t->getMessage(),
+                ]);
+            }
             throw $e;
         }
     }
