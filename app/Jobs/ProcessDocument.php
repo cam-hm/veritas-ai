@@ -58,7 +58,7 @@ class ProcessDocument implements ShouldQueue
             }
 
             $this->document->update([
-                'status' => 'processed',
+                'status' => 'completed',
                 'processed_at' => now(),
                 'num_chunks' => $count,
             ]);

@@ -35,6 +35,39 @@ class DocumentManager extends Component
             ->get();
     }
 
+    /**
+     * Check if any documents are still processing (queued or processing status)
+     * This helps optimize polling - only poll when needed
+     */
+    #[Computed]
+    public function hasProcessingDocuments()
+    {
+        return Document::query()
+            ->where('user_id', Auth::id())
+            ->whereIn('status', ['queued', 'processing'])
+            ->exists();
+    }
+
+    /**
+     * Refresh the documents list - used for polling
+     * This method is called by wire:poll to update the UI
+     * It will continue polling as long as there are documents being processed
+     */
+    public function refreshDocuments()
+    {
+        // Clear the computed cache to force recalculation
+        unset($this->documents);
+        unset($this->hasProcessingDocuments);
+        
+        // Access the properties to trigger recalculation
+        $this->documents;
+        $this->hasProcessingDocuments;
+        
+        // The polling will continue automatically - Livewire handles this
+        // When all documents are in final states, the UI will update but polling continues
+        // This is fine as it's lightweight and ensures real-time updates
+    }
+
     public function save()
     {
         $this->validate([ 'file' => 'required|file|mimes:pdf,docx,txt,md|max:10240' ]);

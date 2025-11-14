@@ -62,40 +62,92 @@
                             x-data="{ show: true }"
                             x-show="show"
                             x-transition
-                            x-init="setTimeout(() => show = false, 2000)"
-                            class="text-sm text-gray-600"
+                            x-init="setTimeout(() => show = false, 5000)"
+                            class="text-sm text-green-600"
                         >{{ session('status') }}</p>
+                    @endif
+                    @if (session('error'))
+                        <p
+                            x-data="{ show: true }"
+                            x-show="show"
+                            x-transition
+                            x-init="setTimeout(() => show = false, 5000)"
+                            class="text-sm text-red-600"
+                        >{{ session('error') }}</p>
                     @endif
                 </div>
             </form>
         </div>
     </div>
 
-    <div class="p-4 sm:p-8 bg-white shadow sm:rounded-lg">
-        <h2 class="text-lg font-medium text-gray-900">
-            Your Documents
-        </h2>
+    <div class="p-4 sm:p-8 bg-white shadow sm:rounded-lg" 
+         wire:poll.5s="refreshDocuments">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-lg font-medium text-gray-900">
+                Your Documents
+            </h2>
+            <button wire:click="$refresh" class="text-sm text-indigo-600 hover:text-indigo-500">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+            </button>
+        </div>
 
         <div class="mt-6 space-y-4">
             @forelse ($this->documents as $document)
-                <div class="flex items-center justify-between p-4 border rounded-lg">
-                    <div class="flex items-center gap-4">
+                <div class="flex items-center justify-between p-4 border rounded-lg {{ $document->status === 'failed' ? 'border-red-300 bg-red-50' : '' }}">
+                    <div class="flex items-center gap-4 flex-1">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        <div>
+                        <div class="flex-1">
                             <p class="font-medium text-gray-900">{{ $document->name }}</p>
-                            <p class="text-sm text-gray-500">Uploaded: {{ $document->created_at->diffForHumans() }}</p>
+                            <div class="flex items-center gap-3 mt-1">
+                                <p class="text-sm text-gray-500">Uploaded: {{ $document->created_at->diffForHumans() }}</p>
+                                @if(in_array($document->status, ['completed', 'processed']) && $document->num_chunks)
+                                    <span class="text-sm text-gray-500">• {{ $document->num_chunks }} chunks</span>
+                                @endif
+                                @if($document->processed_at)
+                                    <span class="text-sm text-gray-500">• Processed: {{ $document->processed_at->diffForHumans() }}</span>
+                                @endif
+                            </div>
+                            @if($document->status === 'failed' && $document->error_message)
+                                <div class="mt-2 p-2 bg-red-100 border border-red-300 rounded text-sm text-red-800">
+                                    <strong>Error:</strong> {{ $document->error_message }}
+                                </div>
+                            @endif
                         </div>
                     </div>
                     <div class="flex items-center gap-4">
-                        <span class="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-full">
-                            Ready
+                        @php
+                            $statusConfig = match($document->status) {
+                                'queued' => ['label' => 'Queued', 'color' => 'yellow', 'bg' => 'bg-yellow-100', 'text' => 'text-yellow-700'],
+                                'processing' => ['label' => 'Processing', 'color' => 'blue', 'bg' => 'bg-blue-100', 'text' => 'text-blue-700'],
+                                'completed', 'processed' => ['label' => 'Ready', 'color' => 'green', 'bg' => 'bg-green-100', 'text' => 'text-green-700'],
+                                'failed' => ['label' => 'Failed', 'color' => 'red', 'bg' => 'bg-red-100', 'text' => 'text-red-700'],
+                                default => ['label' => ucfirst($document->status), 'color' => 'gray', 'bg' => 'bg-gray-100', 'text' => 'text-gray-700'],
+                            };
+                        @endphp
+                        <span class="px-2 py-1 text-xs font-medium {{ $statusConfig['text'] }} {{ $statusConfig['bg'] }} rounded-full flex items-center gap-1">
+                            @if($document->status === 'processing')
+                                <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            @endif
+                            {{ $statusConfig['label'] }}
                         </span>
-                        <a href="{{ route('chat.show', $document) }}" wire:navigate>
-                            <x-primary-button>{{ __('Chat') }}</x-primary-button>
-                        </a>
-                        <x-danger-button wire:click="delete({{ $document->id }})">
+                        @if(in_array($document->status, ['completed', 'processed']))
+                            <a href="{{ route('chat.show', $document) }}" wire:navigate>
+                                <x-primary-button>{{ __('Chat') }}</x-primary-button>
+                            </a>
+                        @else
+                            <x-primary-button disabled class="opacity-50 cursor-not-allowed">
+                                {{ __('Chat') }}
+                            </x-primary-button>
+                        @endif
+                        <x-danger-button wire:click="delete({{ $document->id }})" wire:confirm="Are you sure you want to delete this document?">
                             {{ __('Delete') }}
                         </x-danger-button>
                     </div>
