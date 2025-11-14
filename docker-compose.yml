@@ -132,18 +132,6 @@ services:
     networks:
       - veritas
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: veritas-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama:/root/.ollama
-    profiles: ["ai"]
-    networks:
-      - veritas
-
 networks:
   veritas:
     driver: bridge
@@ -152,5 +140,4 @@ volumes:
   pgdata:
   vendor:
   storage:
-  ollama:
 

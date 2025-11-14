@@ -49,12 +49,23 @@ docker compose up -d app nginx postgres redis mailpit
   ```powershell
   docker compose --profile workers up -d queue scheduler
   ```
-- Ollama (GPU/CPU depending on your Docker Desktop resources):
-  ```powershell
-  docker compose --profile ai up -d ollama
-  ```
+
+### Ollama Configuration
+Ollama is expected to be running on Windows (not in Docker). The application connects to Ollama on Windows using `host.docker.internal:11434`. Make sure:
+1. Ollama is installed and running on Windows
+2. Ollama is accessible on `http://localhost:11434` from Windows
+3. The `.env` file has `OLLAMA_BASE=http://host.docker.internal:11434` (this is the default in `env.docker.example`)
 
 ## 4. Day-to-day commands
+- **Access an interactive shell in the app container:**
+  ```bash
+  docker compose exec app bash
+  ```
+  Or if the container is not running:
+  ```bash
+  docker compose run --rm app bash
+  ```
+  This gives you a shell where you can run multiple commands interactively (e.g., `composer install`, `php artisan migrate`, `php artisan tinker`, etc.)
 - Tail application logs:
   ```powershell
   docker compose logs -f app
@@ -80,12 +91,23 @@ docker compose up -d app nginx postgres redis mailpit
 | Laravel  | http://localhost:8080        |
 | Vite dev | http://localhost:5173        |
 | Mailpit  | http://localhost:8025        |
-| Ollama   | http://localhost:11434       |
+| Ollama   | http://localhost:11434 (Windows host) |
 
 ## 6. Troubleshooting
 - **Composer cannot find `camh/laravel-ollama`:** clone the package next to this repo or replace the path repository with a Git/ZIP source you control.
 - **Queue worker crashes on boot:** run `docker compose run --rm app composer install` again to ensure dependencies match the current codebase.
 - **File change detection on Windows:** the Node container sets `CHOKIDAR_USEPOLLING=true` to improve reliability; expect slightly higher CPU usage.
+- **Cannot connect to Ollama from Docker containers:** 
+  - Ensure Ollama is running on Windows and accessible at `http://localhost:11434`
+  - Verify your `.env` file has `OLLAMA_BASE=http://host.docker.internal:11434`
+  - If `host.docker.internal` doesn't work, you may need to use the Windows host IP. Find it with `ipconfig` in PowerShell and use that IP instead (e.g., `http://172.x.x.x:11434`)
+- **Docker credential error (`error getting credentials`):** 
+  - This occurs when Docker Desktop's credential helper isn't accessible from WSL
+  - Since all images used are public, you can fix this by removing the credential store requirement:
+    ```bash
+    echo '{}' > ~/.docker/config.json
+    ```
+  - If you need private registry access later, you can restore the credential store configuration
 
 With these pieces in place you can develop, run migrations, process documents, and chat through the Dockerized stack without installing the PHP toolchain locally.
 
