@@ -11,8 +11,8 @@ services:
       PHP_IDE_CONFIG: serverName=veritas
     volumes:
       - .:/var/www/html:cached
-      - vendor:/var/www/html/vendor
       - storage:/var/www/html/storage
+      - vendor:/var/www/html/vendor
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,8 +32,8 @@ services:
       - .env
     volumes:
       - .:/var/www/html:cached
-      - vendor:/var/www/html/vendor
       - storage:/var/www/html/storage
+      - vendor:/var/www/html/vendor
     depends_on:
       app:
         condition: service_started
@@ -52,8 +52,8 @@ services:
       - .env
     volumes:
       - .:/var/www/html:cached
-      - vendor:/var/www/html/vendor
       - storage:/var/www/html/storage
+      - vendor:/var/www/html/vendor
     depends_on:
       app:
         condition: service_started
@@ -138,6 +138,6 @@ networks:
 
 volumes:
   pgdata:
-  vendor:
   storage:
+  vendor:
 

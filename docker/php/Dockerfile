@@ -47,6 +47,8 @@ RUN groupmod -o -g ${GID} www-data \
 COPY docker/php/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+COPY docker/php/www.conf /usr/local/etc/php-fpm.d/www.conf
+
 WORKDIR /var/www/html
 
 # Don't set USER here - let entrypoint handle user switching

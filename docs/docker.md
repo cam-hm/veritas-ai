@@ -93,10 +93,30 @@ Ollama is expected to be running on Windows (not in Docker). The application con
 | Mailpit  | http://localhost:8025        |
 | Ollama   | http://localhost:11434 (Windows host) |
 
-## 6. Troubleshooting
+## 6. IDE Integration (Intelephense/VS Code)
+
+The `vendor` directory is stored in a Docker named volume to prevent conflicts with the bind-mounted project directory. To enable IDE autocomplete and type checking:
+
+1. **Sync vendor to local directory:**
+   ```bash
+   ./sync-vendor.sh
+   ```
+   This copies the vendor directory from the container to your local filesystem so your IDE can index it.
+
+2. **Re-sync after composer updates:**
+   After running `composer install` or `composer update` in the container, run the sync script again to update your local vendor directory:
+   ```bash
+   ./sync-vendor.sh
+   ```
+
+**Note:** The local `vendor` directory is gitignored and only used for IDE indexing. The actual vendor directory used by the application runs from the Docker named volume.
+
+## 7. Troubleshooting
 - **Composer cannot find `camh/laravel-ollama`:** clone the package next to this repo or replace the path repository with a Git/ZIP source you control.
 - **Queue worker crashes on boot:** run `docker compose run --rm app composer install` again to ensure dependencies match the current codebase.
 - **File change detection on Windows:** the Node container sets `CHOKIDAR_USEPOLLING=true` to improve reliability; expect slightly higher CPU usage.
+- **IDE shows "Undefined type 'Illuminate..." errors:** run `./sync-vendor.sh` to sync the vendor directory from the container to your local filesystem for IDE indexing.
+- **Nginx 502 Bad Gateway errors:** ensure the `vendor` directory is using a named volume (not a local bind mount). Check `docker-compose.yml` has `vendor:/var/www/html/vendor` in the volumes section.
 - **Cannot connect to Ollama from Docker containers:** 
   - Ensure Ollama is running on Windows and accessible at `http://localhost:11434`
   - Verify your `.env` file has `OLLAMA_BASE=http://host.docker.internal:11434`
