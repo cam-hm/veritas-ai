@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Services\RecursiveChunkingService;
+use App\Services\EmbeddingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -11,8 +12,7 @@ use Illuminate\Queue\SerializesModels;
 use App\Models\Document;
 use App\Services\TextExtractionService;
 use App\Services\SentenceChunkingService;
-use Camh\Ollama\Facades\Ollama;
-use Illuminate\Support\Facades\Storage; // 1. Import the Storage facade
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
 class ProcessDocument implements ShouldQueue
@@ -23,8 +23,11 @@ class ProcessDocument implements ShouldQueue
     {
     }
 
-    public function handle(TextExtractionService $extractor, RecursiveChunkingService $chunker): void
-    {
+    public function handle(
+        TextExtractionService $extractor,
+        RecursiveChunkingService $chunker,
+        EmbeddingService $embeddingService
+    ): void {
         try {
             // Mark as processing
             $this->document->update(['status' => 'processing', 'error_message' => null]);
@@ -37,30 +40,69 @@ class ProcessDocument implements ShouldQueue
 
             $chunks = $chunker->chunk($text);
 
-            $count = 0;
+            // Prepare chunks for embedding
+            $chunkContents = [];
             foreach ($chunks as $chunk) {
-                // The chunk is now an array, so we access the 'content' key
-                $chunkContent = $chunk['content'];
-
+                $chunkContent = $chunk['content'] ?? $chunk;
                 $trimmedChunk = trim($chunkContent);
-                if (empty($trimmedChunk) || strlen($trimmedChunk) < 5) {
-                    continue;
+                if (!empty($trimmedChunk) && strlen($trimmedChunk) >= 5) {
+                    $chunkContents[] = $trimmedChunk;
                 }
+            }
 
-                $embedding = Ollama::embed($trimmedChunk);
+            if (empty($chunkContents)) {
+                throw new \RuntimeException('No valid chunks found after processing document');
+            }
 
-                $this->document->chunks()->create([
-                    'content' => $trimmedChunk,
-                    'embedding' => $embedding,
-                    // We will add a 'metadata' column to the database later
-                ]);
-                $count++;
+            // Generate embeddings in parallel batches
+            Log::info('Starting batch embedding generation', [
+                'document_id' => $this->document->id,
+                'chunk_count' => count($chunkContents),
+            ]);
+
+            $embeddings = $embeddingService->generateEmbeddings(
+                $chunkContents,
+                function ($processed, $total) {
+                    Log::debug('Embedding progress', [
+                        'document_id' => $this->document->id,
+                        'processed' => $processed,
+                        'total' => $total,
+                        'percentage' => round(($processed / $total) * 100, 2),
+                    ]);
+                }
+            );
+
+            // Store chunks with embeddings
+            $count = 0;
+            foreach ($chunkContents as $index => $chunkContent) {
+                if (isset($embeddings[$index])) {
+                    $this->document->chunks()->create([
+                        'content' => $chunkContent,
+                        'embedding' => $embeddings[$index],
+                        // We will add a 'metadata' column to the database later
+                    ]);
+                    $count++;
+                } else {
+                    Log::warning('Missing embedding for chunk', [
+                        'document_id' => $this->document->id,
+                        'chunk_index' => $index,
+                    ]);
+                }
+            }
+
+            if ($count === 0) {
+                throw new \RuntimeException('No chunks were successfully embedded');
             }
 
             $this->document->update([
                 'status' => 'completed',
                 'processed_at' => now(),
                 'num_chunks' => $count,
+            ]);
+
+            Log::info('Document processing completed', [
+                'document_id' => $this->document->id,
+                'chunks_created' => $count,
             ]);
         } catch (\Exception $e) {
             // Update document to failed state and store error message
@@ -77,6 +119,13 @@ class ProcessDocument implements ShouldQueue
                     'update_error' => $t->getMessage(),
                 ]);
             }
+
+            Log::error('Document processing failed', [
+                'document_id' => $this->document->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             throw $e;
         }
     }
