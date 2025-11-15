@@ -49,6 +49,12 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 COPY docker/php/www.conf /usr/local/etc/php-fpm.d/www.conf
 
+# Configure PHP upload limits for 10MB file uploads
+RUN echo "upload_max_filesize = 10M" >> /usr/local/etc/php/conf.d/uploads.ini && \
+    echo "post_max_size = 10M" >> /usr/local/etc/php/conf.d/uploads.ini && \
+    echo "max_execution_time = 300" >> /usr/local/etc/php/conf.d/uploads.ini && \
+    echo "max_input_time = 300" >> /usr/local/etc/php/conf.d/uploads.ini
+
 WORKDIR /var/www/html
 
 # Don't set USER here - let entrypoint handle user switching

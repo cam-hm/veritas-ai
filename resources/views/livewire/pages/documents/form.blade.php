@@ -114,7 +114,7 @@
                             </div>
                             @if($document->status === 'failed' && $document->error_message)
                                 <div class="mt-2 p-2 bg-red-100 border border-red-300 rounded text-sm text-red-800">
-                                    <strong>Error:</strong> {{ $document->error_message }}
+                                    <strong>Error:</strong> {{ is_array($document->error_message) ? json_encode($document->error_message) : $document->error_message }}
                                 </div>
                             @endif
                         </div>

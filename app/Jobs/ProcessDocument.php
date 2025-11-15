@@ -106,23 +106,34 @@ class ProcessDocument implements ShouldQueue
             ]);
         } catch (\Exception $e) {
             // Update document to failed state and store error message
+            // Ensure error_message is always a string, not an array
+            $errorMessage = is_array($e->getMessage()) 
+                ? json_encode($e->getMessage()) 
+                : (string) $e->getMessage();
+            
+            // Truncate if too long (database text field limit)
+            if (strlen($errorMessage) > 10000) {
+                $errorMessage = substr($errorMessage, 0, 10000) . '... (truncated)';
+            }
+            
             try {
                 $this->document->update([
                     'status' => 'failed',
-                    'error_message' => $e->getMessage(),
+                    'error_message' => $errorMessage,
                 ]);
             } catch (\Throwable $t) {
                 // Best-effort logging if update fails
                 Log::error('Failed to update document status after exception', [
                     'document_id' => $this->document->id,
-                    'exception' => $e->getMessage(),
+                    'exception' => $errorMessage,
                     'update_error' => $t->getMessage(),
                 ]);
             }
 
             Log::error('Document processing failed', [
                 'document_id' => $this->document->id,
-                'error' => $e->getMessage(),
+                'error' => $errorMessage,
+                'exception_class' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
 
