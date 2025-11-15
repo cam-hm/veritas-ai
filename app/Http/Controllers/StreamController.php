@@ -8,6 +8,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use App\Models\Document;
 use App\Models\DocumentChunk;
 use App\Services\TokenEstimationService;
+use App\Services\RetrievalService;
 use Camh\Ollama\Facades\Ollama;
 use Pgvector\Laravel\Distance;
 use Exception;
@@ -42,14 +43,29 @@ class StreamController extends Controller
                 // Retrieve more chunks initially for better context selection
                 $candidateChunks = $query
                     ->nearestNeighbors('embedding', $questionEmbedding, Distance::Cosine, 3)
-                    ->take(15) // Retrieve more initially
+                    ->take(20) // Retrieve more initially for re-ranking
                     ->get();
 
                 Log::info('Candidate Chunks: ' . $candidateChunks->pluck('id')->implode(', '));
 
-                // Manage context window size
+                // Initialize services
                 $tokenService = new TokenEstimationService();
+                $retrievalService = new RetrievalService($tokenService);
                 $maxContextTokens = Config::get('ollama.max_context_tokens', 4000);
+                
+                // Re-rank chunks by multiple factors (similarity + keyword + length)
+                $rerankedChunks = $retrievalService->rerankChunks($candidateChunks, $lastQuestion);
+                
+                Log::info('Re-ranking completed', [
+                    'total_candidates' => $candidateChunks->count(),
+                    'top_scores' => $rerankedChunks->take(5)->map(fn($item) => [
+                        'chunk_id' => $item['chunk']->id,
+                        'score' => round($item['score'], 3),
+                        'similarity' => round($item['similarity_score'], 3),
+                        'keyword' => round($item['keyword_score'], 3),
+                        'length' => round($item['length_score'], 3),
+                    ])->toArray(),
+                ]);
                 
                 // Estimate tokens for system prompt base
                 $scope = $document ? "this document ('{$document->name}')" : 'the available documents';
@@ -67,30 +83,25 @@ class StreamController extends Controller
                 // Reserve tokens for system prompt, user messages, and response
                 // Reserve ~20% for response generation
                 $reservedTokens = $baseTokens + $userMessagesTokens + (int)($maxContextTokens * 0.2);
-                $availableTokens = $maxContextTokens - $reservedTokens;
 
-                // Select chunks that fit within token limit
-                $selectedChunks = collect();
-                $usedTokens = 0;
-                
-                foreach ($candidateChunks as $chunk) {
-                    $chunkTokens = $tokenService->estimateTokens($chunk->content);
-                    $separatorTokens = $tokenService->estimateTokens("\n\n---\n\n");
-                    
-                    if ($usedTokens + $chunkTokens + $separatorTokens > $availableTokens) {
-                        // Can't fit this chunk, stop adding
-                        break;
-                    }
-                    
-                    $selectedChunks->push($chunk);
-                    $usedTokens += $chunkTokens + $separatorTokens;
+                // Select chunks that fit within token limit (using re-ranked order)
+                $selectedChunks = $retrievalService->selectChunksWithinTokenLimit(
+                    $rerankedChunks,
+                    $maxContextTokens,
+                    $reservedTokens
+                );
+
+                $usedTokens = $reservedTokens;
+                foreach ($selectedChunks as $chunk) {
+                    $usedTokens += $tokenService->estimateTokens($chunk->content) 
+                                 + $tokenService->estimateTokens("\n\n---\n\n");
                 }
 
                 Log::info('Context window management', [
                     'candidate_chunks' => $candidateChunks->count(),
                     'selected_chunks' => $selectedChunks->count(),
                     'estimated_tokens' => $usedTokens,
-                    'available_tokens' => $availableTokens,
+                    'reserved_tokens' => $reservedTokens,
                     'max_tokens' => $maxContextTokens,
                 ]);
 
