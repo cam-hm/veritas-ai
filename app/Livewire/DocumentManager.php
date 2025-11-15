@@ -74,12 +74,30 @@ class DocumentManager extends Component
         try {
             $this->validate([ 'file' => 'required|file|mimes:pdf,docx,txt,md|max:10240' ]);
             
+            // Calculate file hash for deduplication
+            $fileHash = hash_file('sha256', $this->file->getRealPath());
+            $fileSize = $this->file->getSize();
+            
+            // Check for duplicate files (same hash and same user)
+            $existing = Document::where('file_hash', $fileHash)
+                ->where('user_id', Auth::id())
+                ->first();
+            
+            if ($existing) {
+                session()->flash('status', 'This document has already been uploaded. (' . $existing->name . ')');
+                $this->reset('file');
+                $this->fileName = '';
+                return;
+            }
+            
             $path = $this->file->store('documents');
             
             $document = Document::create([
                 'user_id' => Auth::id(),
                 'name' => $this->file->getClientOriginalName(),
                 'path' => $path,
+                'file_hash' => $fileHash,
+                'file_size' => $fileSize,
                 'status' => 'queued',
             ]);
             

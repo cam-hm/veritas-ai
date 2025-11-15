@@ -105,6 +105,9 @@
                             <p class="font-medium text-gray-900">{{ $document->name }}</p>
                             <div class="flex items-center gap-3 mt-1">
                                 <p class="text-sm text-gray-500">Uploaded: {{ $document->created_at->diffForHumans() }}</p>
+                                @if($document->file_size)
+                                    <span class="text-sm text-gray-500">• {{ $document->formatted_file_size }}</span>
+                                @endif
                                 @if(in_array($document->status, ['completed', 'processed']) && $document->num_chunks)
                                     <span class="text-sm text-gray-500">• {{ $document->num_chunks }} chunks</span>
                                 @endif

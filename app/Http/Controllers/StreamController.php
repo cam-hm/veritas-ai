@@ -7,10 +7,12 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use App\Models\Document;
 use App\Models\DocumentChunk;
+use App\Services\TokenEstimationService;
 use Camh\Ollama\Facades\Ollama;
 use Pgvector\Laravel\Distance;
 use Exception;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Config;
 
 class StreamController extends Controller
 {
@@ -37,19 +39,66 @@ class StreamController extends Controller
                     });
                 }
 
-                $relevantChunks = $query
+                // Retrieve more chunks initially for better context selection
+                $candidateChunks = $query
                     ->nearestNeighbors('embedding', $questionEmbedding, Distance::Cosine, 3)
-                    ->take(5)
+                    ->take(15) // Retrieve more initially
                     ->get();
 
-                Log::info('Relevant Chunks: ' . $relevantChunks->pluck('id')->implode(', '));
+                Log::info('Candidate Chunks: ' . $candidateChunks->pluck('id')->implode(', '));
 
-                $context = $relevantChunks->pluck('content')->implode("\n\n---\n\n");
+                // Manage context window size
+                $tokenService = new TokenEstimationService();
+                $maxContextTokens = Config::get('ollama.max_context_tokens', 4000);
+                
+                // Estimate tokens for system prompt base
+                $scope = $document ? "this document ('{$document->name}')" : 'the available documents';
+                $systemPromptBase = "Based only on the following context from {$scope}, answer the user's question. If you are not sure, say you are not sure and suggest where to look.\n\nContext:\n";
+                $baseTokens = $tokenService->estimateTokens($systemPromptBase);
+                
+                // Estimate tokens for user messages
+                $userMessagesTokens = 0;
+                foreach ($messages as $message) {
+                    if ($message['role'] === 'user') {
+                        $userMessagesTokens += $tokenService->estimateTokens($message['content'] ?? '');
+                    }
+                }
+                
+                // Reserve tokens for system prompt, user messages, and response
+                // Reserve ~20% for response generation
+                $reservedTokens = $baseTokens + $userMessagesTokens + (int)($maxContextTokens * 0.2);
+                $availableTokens = $maxContextTokens - $reservedTokens;
+
+                // Select chunks that fit within token limit
+                $selectedChunks = collect();
+                $usedTokens = 0;
+                
+                foreach ($candidateChunks as $chunk) {
+                    $chunkTokens = $tokenService->estimateTokens($chunk->content);
+                    $separatorTokens = $tokenService->estimateTokens("\n\n---\n\n");
+                    
+                    if ($usedTokens + $chunkTokens + $separatorTokens > $availableTokens) {
+                        // Can't fit this chunk, stop adding
+                        break;
+                    }
+                    
+                    $selectedChunks->push($chunk);
+                    $usedTokens += $chunkTokens + $separatorTokens;
+                }
+
+                Log::info('Context window management', [
+                    'candidate_chunks' => $candidateChunks->count(),
+                    'selected_chunks' => $selectedChunks->count(),
+                    'estimated_tokens' => $usedTokens,
+                    'available_tokens' => $availableTokens,
+                    'max_tokens' => $maxContextTokens,
+                ]);
+
+                $context = $selectedChunks->pluck('content')->implode("\n\n---\n\n");
                 if (trim($context) === '') {
                     $systemPrompt = "You are a helpful assistant. If the context is empty or insufficient, answer based on your general knowledge about the user's documents if possible, and otherwise ask a clarifying question.";
                 } else {
-                    $scope = $document ? "this document ('{$document->name}')" : 'the available documents';
-                    $systemPrompt = "Based only on the following context from {$scope}, answer the user's question. If you are not sure, say you are not sure and suggest where to look.\n\nContext:\n{$context}";
+                    $systemPrompt = $systemPromptBase . $context;
                 }
 
                 $messagesForAI = $messages;
