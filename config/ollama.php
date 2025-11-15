@@ -8,6 +8,7 @@ return [
     'retry_delay' => env('OLLAMA_RETRY_DELAY', 1.0), // seconds
     'embed_batch_size' => env('OLLAMA_EMBED_BATCH_SIZE', 10), // chunks per batch
     'embed_concurrency' => env('OLLAMA_EMBED_CONCURRENCY', 5), // concurrent requests
+    'max_context_tokens' => env('OLLAMA_MAX_CONTEXT_TOKENS', 4000), // Maximum tokens for context window
     'mask_pii' => true,
     'pii_patterns' => [
         '/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i',
