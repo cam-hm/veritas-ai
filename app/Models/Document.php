@@ -12,6 +12,10 @@ class Document extends Model
 
     protected $fillable = ['name', 'path', 'user_id', 'status', 'processed_at', 'error_message', 'num_chunks', 'embedding_model'];
 
+    protected $casts = [
+        'processed_at' => 'datetime',
+    ];
+
     /**
      * A document is composed of many text chunks.
      */
