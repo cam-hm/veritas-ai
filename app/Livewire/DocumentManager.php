@@ -9,6 +9,7 @@ use App\Jobs\ProcessDocument;
 use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class DocumentManager extends Component
 {
@@ -70,22 +71,55 @@ class DocumentManager extends Component
 
     public function save()
     {
-        $this->validate([ 'file' => 'required|file|mimes:pdf,docx,txt,md|max:10240' ]);
-        $path = $this->file->store('documents');
-        $document = Document::create([
-            'user_id' => Auth::id(),
-            'name' => $this->file->getClientOriginalName(),
-            'path' => $path,
-            'status' => 'queued',
-        ]);
-        ProcessDocument::dispatch($document);
+        try {
+            $this->validate([ 'file' => 'required|file|mimes:pdf,docx,txt,md|max:10240' ]);
+            
+            $path = $this->file->store('documents');
+            
+            $document = Document::create([
+                'user_id' => Auth::id(),
+                'name' => $this->file->getClientOriginalName(),
+                'path' => $path,
+                'status' => 'queued',
+            ]);
+            
+            ProcessDocument::dispatch($document);
 
-        $this->reset('file');
-        $this->fileName = '';
-        session()->flash('status', 'Document uploaded and is now being processed.');
+            $this->reset('file');
+            $this->fileName = '';
+            session()->flash('status', 'Document uploaded and is now being processed.');
 
-        // 1. Dispatch a browser event to tell Alpine.js we are done.
-        $this->dispatch('file-upload-finished');
+            // 1. Dispatch a browser event to tell Alpine.js we are done.
+            $this->dispatch('file-upload-finished');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Validation errors are handled by Livewire automatically
+            // But we can log them for debugging
+            Log::warning('Document upload validation failed', [
+                'errors' => $e->errors(),
+                'user_id' => Auth::id(),
+                'file_name' => $this->file?->getClientOriginalName(),
+            ]);
+            throw $e; // Re-throw to let Livewire handle it
+        } catch (\Exception $e) {
+            // Log unexpected errors with full context
+            $errorMessage = is_array($e->getMessage()) 
+                ? json_encode($e->getMessage()) 
+                : (string) $e->getMessage();
+            
+            Log::error('Document upload failed', [
+                'error' => $errorMessage,
+                'exception_class' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => Auth::id(),
+                'file_name' => $this->file?->getClientOriginalName(),
+                'file_size' => $this->file?->getSize(),
+            ]);
+            
+            session()->flash('error', 'Failed to upload document: ' . $errorMessage);
+            throw $e;
+        }
     }
 
     public function delete($documentId)
