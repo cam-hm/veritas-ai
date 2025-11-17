@@ -23,7 +23,7 @@ window.chatBoxComponent = function(initialMessages, documentId, streamUrl, csrfT
       this.saveMessageToDB(userMessage);
 
       // Add assistant placeholder to UI only (do NOT save to DB yet)
-      const assistantMessage = { role: 'assistant', content: '' };
+      const assistantMessage = { role: 'assistant', content: '', thinking: false };
       this.messages.push(assistantMessage);
 
       fetch(streamUrl, {
@@ -37,16 +37,37 @@ window.chatBoxComponent = function(initialMessages, documentId, streamUrl, csrfT
           messages: this.messages,
         }),
       }).then(response => {
+        // Check if response is OK before reading stream
+        if (!response.ok) {
+          return response.text().then(text => {
+            let errorMessage = `HTTP request returned status code ${response.status}`;
+            try {
+              const errorData = JSON.parse(text);
+              if (errorData.error || errorData.message) {
+                errorMessage = errorData.error || errorData.message;
+              }
+            } catch (e) {
+              // If response is not JSON, use the text as error message
+              if (text) {
+                errorMessage = text;
+              }
+            }
+            throw new Error(errorMessage);
+          });
+        }
+        
         const reader = response.body.getReader();
         let decoder = new TextDecoder();
         let buffer = '';
         let rafScheduled = false;
-        let hasUpdates = false;
+        let pendingUpdate = false;
+        let lastUpdateTime = 0;
+        const UPDATE_INTERVAL = 16; // ~60fps (16ms per frame)
         
         const processChunk = ({ done, value }) => {
           if (done) {
             // Final update if there are pending changes
-            if (hasUpdates) {
+            if (pendingUpdate) {
               this.messages = [...this.messages];
             }
             this.isStreaming = false;
@@ -68,21 +89,46 @@ window.chatBoxComponent = function(initialMessages, documentId, streamUrl, csrfT
               let chunk = line.slice(6);
               try {
                 let data = JSON.parse(chunk);
+                
+                // Handle thinking message
+                if (data.type === 'thinking') {
+                  const lastIndex = this.messages.length - 1;
+                  this.messages[lastIndex].thinking = true;
+                  this.messages[lastIndex].content = data.message || 'Đang xử lý...';
+                  this.messages = [...this.messages];
+                  continue;
+                }
+                
+                // Handle ready message - clear thinking state
+                if (data.type === 'ready') {
+                  const lastIndex = this.messages.length - 1;
+                  this.messages[lastIndex].thinking = false;
+                  this.messages[lastIndex].content = '';
+                  this.messages = [...this.messages];
+                  continue;
+                }
+                
                 if (data.error) {
                   console.error('Stream error:', data.error);
-                  this.messages[this.messages.length - 1].content = `Error: ${data.error}`;
+                  const lastIndex = this.messages.length - 1;
+                  this.messages[lastIndex].content = `Error: ${data.error}`;
+                  this.messages[lastIndex].thinking = false;
                   this.messages = [...this.messages];
                   this.isStreaming = false;
                   this.saveMessageToDB({ role: 'assistant', content: `Error: ${data.error}` });
                   return;
                 }
+                
+                // Handle Ollama streaming response
                 if (data.message && data.message.content) {
                   const lastIndex = this.messages.length - 1;
+                  this.messages[lastIndex].thinking = false;
                   this.messages[lastIndex].content += data.message.content;
-                  hasUpdates = true;
+                  pendingUpdate = true;
                 }
+                
                 if (data.done) {
-                  if (hasUpdates) {
+                  if (pendingUpdate) {
                     this.messages = [...this.messages];
                   }
                   this.isStreaming = false;
@@ -96,30 +142,56 @@ window.chatBoxComponent = function(initialMessages, documentId, streamUrl, csrfT
                 // Fallback: handle plain text chunks from Ollama
                 if (chunk && chunk.trim()) {
                   const lastIndex = this.messages.length - 1;
+                  this.messages[lastIndex].thinking = false;
                   this.messages[lastIndex].content += chunk;
-                  hasUpdates = true;
+                  pendingUpdate = true;
                 }
               }
             }
           }
           
-          // Batch reactivity updates using requestAnimationFrame
-          if (hasUpdates && !rafScheduled) {
-            rafScheduled = true;
-            requestAnimationFrame(() => {
+          // Optimized batching: update at ~60fps for smooth rendering
+          // Use RAF with time-based throttling for consistent frame rate
+          const now = performance.now();
+          if (pendingUpdate && !rafScheduled) {
+            if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+              // Update immediately if enough time has passed
               this.messages = [...this.messages];
-              hasUpdates = false;
-              rafScheduled = false;
-            });
+              pendingUpdate = false;
+              lastUpdateTime = now;
+            } else {
+              // Schedule RAF for next frame
+              rafScheduled = true;
+              requestAnimationFrame(() => {
+                this.messages = [...this.messages];
+                pendingUpdate = false;
+                rafScheduled = false;
+                lastUpdateTime = performance.now();
+              });
+            }
           }
           
           return reader.read().then(processChunk);
         };
         return reader.read().then(processChunk);
-      }).catch(() => {
-        this.messages[this.messages.length - 1].content = 'Sorry, a connection error occurred.';
+      }).catch((error) => {
+        console.error('Stream error:', error);
+        const errorMessage = error.message || 'Sorry, a connection error occurred.';
+        const lastIndex = this.messages.length - 1;
+        if (lastIndex >= 0 && this.messages[lastIndex].role === 'assistant') {
+          this.messages[lastIndex].content = `Error: ${errorMessage}`;
+          this.messages[lastIndex].thinking = false;
+          this.messages = [...this.messages];
+        } else {
+          this.messages.push({ 
+            role: 'assistant', 
+            content: `Error: ${errorMessage}`,
+            thinking: false 
+          });
+          this.messages = [...this.messages];
+        }
         this.isStreaming = false;
-        this.saveMessageToDB({ role: 'assistant', content: 'Sorry, a connection error occurred.' });
+        this.saveMessageToDB({ role: 'assistant', content: `Error: ${errorMessage}` });
       });
 
       this.question = '';

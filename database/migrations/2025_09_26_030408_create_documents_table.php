@@ -13,11 +13,25 @@ return new class extends Migration
     {
         Schema::create('documents', function (Blueprint $table) {
             $table->id();
-            // This will link to the user who uploaded the document.
-            // We are commenting it out for now to keep the MVP simple.
-            // $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            
+            // Ownership
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            
+            // Basic document info
             $table->string('name');
             $table->string('path');
+            
+            // File metadata
+            $table->string('file_hash', 64)->nullable()->index();
+            $table->unsignedBigInteger('file_size')->nullable();
+            
+            // Processing lifecycle fields
+            $table->string('status')->default('queued');
+            $table->timestamp('processed_at')->nullable();
+            $table->text('error_message')->nullable();
+            $table->unsignedInteger('num_chunks')->nullable();
+            $table->string('embedding_model')->nullable();
+            
             $table->timestamps();
         });
     }
