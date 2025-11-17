@@ -2,10 +2,28 @@
     x-data="chatBoxComponent({{ json_encode($messages) }}, {{ $document?->id ?? 'null' }}, '{{ route('chat.stream') }}', '{{ csrf_token() }}')"
     x-init="
         let messageBox = $refs.messageBox;
+        let rafId = null;
+        let scrollTimeout = null;
         let observer = new MutationObserver(() => {
-            messageBox.scrollTop = messageBox.scrollHeight;
+            // Batch scroll updates with requestAnimationFrame and debounce
+            if (rafId) cancelAnimationFrame(rafId);
+            if (scrollTimeout) clearTimeout(scrollTimeout);
+            
+            rafId = requestAnimationFrame(() => {
+                messageBox.scrollTop = messageBox.scrollHeight;
+            });
+            
+            // Also debounce with timeout for smoother scrolling
+            scrollTimeout = setTimeout(() => {
+                messageBox.scrollTop = messageBox.scrollHeight;
+            }, 50);
         });
-        observer.observe(messageBox, { childList: true, subtree: true });
+        // Observe childList changes (new messages) and characterData changes (content updates)
+        observer.observe(messageBox, { 
+            childList: true, 
+            subtree: true,
+            characterData: true
+        });
     "
     class="flex flex-col h-[80vh] bg-white rounded-lg shadow-sm"
 >
@@ -15,7 +33,7 @@
                 <div class="flex items-start gap-4" :class="{ 'flex-row-reverse': message.role === 'user' }">
                     <div class="w-10 h-10 rounded-full flex-shrink-0" :class="{ 'bg-indigo-500': message.role === 'user', 'bg-gray-300': message.role === 'assistant' }"></div>
                     <div class="p-4 rounded-lg max-w-lg" :class="{ 'bg-indigo-50 text-indigo-900': message.role === 'user', 'bg-gray-100 text-gray-800': message.role === 'assistant' }">
-                        <p class="text-sm prose" :class="{ 'typing-indicator': message.content === '' && isStreaming }" x-html="message.content ? message.content.replace(/\n/g, '<br>') : ''"></p>
+                        <p class="text-sm prose whitespace-pre-wrap" :class="{ 'typing-indicator': message.content === '' && isStreaming }" x-html="(message.content || '').replace(/\n/g, '<br>')"></p>
                     </div>
                 </div>
             </template>

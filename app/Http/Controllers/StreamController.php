@@ -117,8 +117,29 @@ class StreamController extends Controller
 
                 $stream = Ollama::chat($messagesForAI, ['stream' => true]);
 
+                // Flush chunks immediately for responsive streaming
+                // Small buffer (2 chunks) to reduce flush overhead while maintaining responsiveness
+                $buffer = '';
+                $chunkCount = 0;
+                $bufferSize = 2; // Flush after 2 chunks for balance
+
                 foreach ($stream as $chunk) {
-                    echo "data: " . $chunk . "\n\n";
+                    $buffer .= "data: " . $chunk . "\n\n";
+                    $chunkCount++;
+
+                    // Flush if buffer is full
+                    if ($chunkCount >= $bufferSize) {
+                        echo $buffer;
+                        if (ob_get_level() > 0) ob_flush();
+                        flush();
+                        $buffer = '';
+                        $chunkCount = 0;
+                    }
+                }
+
+                // Flush remaining buffer
+                if (!empty($buffer)) {
+                    echo $buffer;
                     if (ob_get_level() > 0) ob_flush();
                     flush();
                 }

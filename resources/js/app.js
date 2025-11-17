@@ -40,8 +40,15 @@ window.chatBoxComponent = function(initialMessages, documentId, streamUrl, csrfT
         const reader = response.body.getReader();
         let decoder = new TextDecoder();
         let buffer = '';
+        let rafScheduled = false;
+        let hasUpdates = false;
+        
         const processChunk = ({ done, value }) => {
           if (done) {
+            // Final update if there are pending changes
+            if (hasUpdates) {
+              this.messages = [...this.messages];
+            }
             this.isStreaming = false;
             // Store assistant message only once after streaming is done
             const assistantMsg = this.messages[this.messages.length - 1];
@@ -50,38 +57,62 @@ window.chatBoxComponent = function(initialMessages, documentId, streamUrl, csrfT
             }
             return;
           }
+          
           buffer += decoder.decode(value, { stream: true });
           let lines = buffer.split('\n\n');
           buffer = lines.pop();
+          
+          // Process chunks and accumulate updates
           for (let line of lines) {
             if (line.startsWith('data: ')) {
               let chunk = line.slice(6);
               try {
                 let data = JSON.parse(chunk);
                 if (data.error) {
+                  console.error('Stream error:', data.error);
                   this.messages[this.messages.length - 1].content = `Error: ${data.error}`;
+                  this.messages = [...this.messages];
                   this.isStreaming = false;
                   this.saveMessageToDB({ role: 'assistant', content: `Error: ${data.error}` });
                   return;
                 }
                 if (data.message && data.message.content) {
-                  this.messages[this.messages.length - 1].content += data.message.content;
-                  // Do NOT save assistant chunk to DB here
+                  const lastIndex = this.messages.length - 1;
+                  this.messages[lastIndex].content += data.message.content;
+                  hasUpdates = true;
                 }
                 if (data.done) {
+                  if (hasUpdates) {
+                    this.messages = [...this.messages];
+                  }
                   this.isStreaming = false;
-                  // Store assistant message only once after streaming is done
                   const assistantMsg = this.messages[this.messages.length - 1];
                   if (assistantMsg.role === 'assistant') {
                     this.saveMessageToDB(assistantMsg);
                   }
                   return;
                 }
-              } catch {
-                // Fallback for non-json chunks
+              } catch (e) {
+                // Fallback: handle plain text chunks from Ollama
+                if (chunk && chunk.trim()) {
+                  const lastIndex = this.messages.length - 1;
+                  this.messages[lastIndex].content += chunk;
+                  hasUpdates = true;
+                }
               }
             }
           }
+          
+          // Batch reactivity updates using requestAnimationFrame
+          if (hasUpdates && !rafScheduled) {
+            rafScheduled = true;
+            requestAnimationFrame(() => {
+              this.messages = [...this.messages];
+              hasUpdates = false;
+              rafScheduled = false;
+            });
+          }
+          
           return reader.read().then(processChunk);
         };
         return reader.read().then(processChunk);
