@@ -62,7 +62,8 @@ window.chatBoxComponent = function(initialMessages, documentId, streamUrl, csrfT
         let rafScheduled = false;
         let pendingUpdate = false;
         let lastUpdateTime = 0;
-        const UPDATE_INTERVAL = 16; // ~60fps (16ms per frame)
+        // Optimized interval for smooth rendering without lag
+        const UPDATE_INTERVAL = 16; // ~60fps for smooth character-by-character rendering
         
         const processChunk = ({ done, value }) => {
           if (done) {
@@ -81,7 +82,7 @@ window.chatBoxComponent = function(initialMessages, documentId, streamUrl, csrfT
           
           buffer += decoder.decode(value, { stream: true });
           let lines = buffer.split('\n\n');
-          buffer = lines.pop();
+          buffer = lines.pop() || '';
           
           // Process chunks and accumulate updates
           for (let line of lines) {
@@ -119,7 +120,7 @@ window.chatBoxComponent = function(initialMessages, documentId, streamUrl, csrfT
                   return;
                 }
                 
-                // Handle Ollama streaming response
+                // Handle Ollama streaming response - accumulate content for smooth rendering
                 if (data.message && data.message.content) {
                   const lastIndex = this.messages.length - 1;
                   this.messages[lastIndex].thinking = false;
@@ -150,8 +151,7 @@ window.chatBoxComponent = function(initialMessages, documentId, streamUrl, csrfT
             }
           }
           
-          // Optimized batching: update at ~60fps for smooth rendering
-          // Use RAF with time-based throttling for consistent frame rate
+          // Optimized rendering: batch updates for smooth performance
           const now = performance.now();
           if (pendingUpdate && !rafScheduled) {
             if (now - lastUpdateTime >= UPDATE_INTERVAL) {
